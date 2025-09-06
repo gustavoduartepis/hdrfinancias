@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { ExcelService } from '../services/excelService';
 import { StorageService } from '../utils/storage';
 import type { ExportData } from '../services/excelService';
+import { ApiService, type Transaction as ApiTransaction, type Client as ApiClient } from '../services/apiService';
 
 // Types
 export interface Transaction {
@@ -154,9 +155,23 @@ const getStorageKey = (userId: string, dataType: 'transactions' | 'clients') => 
   return `audiovisual_${dataType}_${userId}`;
 };
 
-const saveToStorage = (userId: string, dataType: 'transactions' | 'clients', data: any) => {
+const saveToStorage = async (userId: string, dataType: 'transactions' | 'clients', data: any) => {
   try {
     const key = getStorageKey(userId, dataType);
+    
+    // Tentar sincronizar com API primeiro
+    const isOnline = await ApiService.isOnline();
+    if (isOnline) {
+      console.log(`🌐 API online, sincronizando ${dataType}...`);
+      const syncResponse = await ApiService.syncData({ [dataType]: data });
+      if (syncResponse.data && !syncResponse.error) {
+        console.log(`✅ ${dataType} sincronizados com API`);
+      } else {
+        console.log(`⚠️ Erro na sincronização de ${dataType}, salvando localmente`);
+      }
+    }
+    
+    // Sempre salvar localmente como backup
     const success = StorageService.setItem(key, data);
     console.log(`Salvando ${dataType} para usuário ${userId}:`, success ? 'sucesso' : 'falhou', data.length);
     return success;
@@ -166,8 +181,28 @@ const saveToStorage = (userId: string, dataType: 'transactions' | 'clients', dat
   }
 };
 
-const loadFromStorage = (userId: string, dataType: 'transactions' | 'clients') => {
+const loadFromStorage = async (userId: string, dataType: 'transactions' | 'clients') => {
   try {
+    // Tentar carregar da API primeiro
+    const isOnline = await ApiService.isOnline();
+    if (isOnline) {
+      console.log(`🌐 API online, carregando ${dataType} da API...`);
+      
+      const response = dataType === 'transactions' 
+        ? await ApiService.getTransactions()
+        : await ApiService.getClients();
+      
+      if (response.data && !response.error) {
+        console.log(`✅ ${dataType} carregados da API:`, response.data.length);
+        // Salvar localmente como backup
+        const key = getStorageKey(userId, dataType);
+        StorageService.setItem(key, response.data);
+        return response.data;
+      }
+    }
+    
+    // Fallback para dados locais
+    console.log(`📂 Carregando ${dataType} locais...`);
     const key = getStorageKey(userId, dataType);
     const data = StorageService.getItem(key, []);
     console.log(`Carregando ${dataType} para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
@@ -208,23 +243,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Load user data when user changes
   useEffect(() => {
-    if (user) {
-      console.log('Carregando dados para usuário:', user.email, user.id);
-      
-      // Migrate existing data if needed
-      migrateExistingData(user.id);
-      
-      const userTransactions = loadFromStorage(user.id, 'transactions');
-      const userClients = loadFromStorage(user.id, 'clients');
-      
-      dispatch({ type: 'SET_TRANSACTIONS', payload: userTransactions });
-      dispatch({ type: 'SET_CLIENTS', payload: userClients });
-    } else {
-      console.log('Usuário deslogado, limpando dados');
-      // Clear data when user logs out
-      dispatch({ type: 'SET_TRANSACTIONS', payload: [] });
-      dispatch({ type: 'SET_CLIENTS', payload: [] });
-    }
+    const loadUserData = async () => {
+      if (user) {
+        console.log('Carregando dados para usuário:', user.email, user.id);
+        
+        // Migrate existing data if needed
+        migrateExistingData(user.id);
+        
+        const userTransactions = await loadFromStorage(user.id, 'transactions');
+        const userClients = await loadFromStorage(user.id, 'clients');
+        
+        dispatch({ type: 'SET_TRANSACTIONS', payload: userTransactions });
+        dispatch({ type: 'SET_CLIENTS', payload: userClients });
+      } else {
+        console.log('Usuário deslogado, limpando dados');
+        // Clear data when user logs out
+        dispatch({ type: 'SET_TRANSACTIONS', payload: [] });
+        dispatch({ type: 'SET_CLIENTS', payload: [] });
+      }
+    };
+    
+    loadUserData();
   }, [user]);
 
   // Save data to localStorage whenever transactions or clients change
@@ -262,12 +301,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state.transactions]);
 
   // Helper functions
-  const addTransaction = (transaction: Omit<Transaction, 'id'>) => {
+  const addTransaction = async (transaction: Omit<Transaction, 'id'>) => {
     const newTransaction: Transaction = {
       ...transaction,
       id: Date.now().toString()
     };
+    
+    // Adicionar localmente primeiro
     dispatch({ type: 'ADD_TRANSACTION', payload: newTransaction });
+    
+    // Tentar sincronizar com API
+    try {
+      const isOnline = await ApiService.isOnline();
+      if (isOnline) {
+        const response = await ApiService.createTransaction(newTransaction);
+        if (response.data && !response.error) {
+          console.log('✅ Transação sincronizada com API');
+        }
+      }
+    } catch (error) {
+      console.error('⚠️ Erro ao sincronizar transação:', error);
+    }
   };
 
   const updateTransaction = (transaction: Transaction) => {
@@ -278,12 +332,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'DELETE_TRANSACTION', payload: id });
   };
 
-  const addClient = (client: Omit<Client, 'id'>) => {
+  const addClient = async (client: Omit<Client, 'id'>) => {
     const newClient: Client = {
       ...client,
       id: Date.now().toString()
     };
+    
+    // Adicionar localmente primeiro
     dispatch({ type: 'ADD_CLIENT', payload: newClient });
+    
+    // Tentar sincronizar com API
+    try {
+      const isOnline = await ApiService.isOnline();
+      if (isOnline) {
+        const response = await ApiService.createClient(newClient);
+        if (response.data && !response.error) {
+          console.log('✅ Cliente sincronizado com API');
+        }
+      }
+    } catch (error) {
+      console.error('⚠️ Erro ao sincronizar cliente:', error);
+    }
   };
 
   const updateClient = (client: Client) => {

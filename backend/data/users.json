@@ -1,0 +1,18 @@
+[
+  {
+    "id": "1",
+    "email": "admin@audiovisual.com",
+    "password": "$2a$10$KJEjFTho3wXcS8QY3hqlNOQNlEAbLKg6jAEhBoolT14HMAE7h0Rba",
+    "name": "Administrador",
+    "role": "admin",
+    "createdAt": "2025-09-06T20:57:32.503Z"
+  },
+  {
+    "id": "2",
+    "email": "user@audiovisual.com",
+    "password": "$2a$10$R2HbZatZbrjy2P.yqpLE0OfZYz8KQSCa6bYb4F.8grdeRFDkFh8UC",
+    "name": "Usuário Comum",
+    "role": "user",
+    "createdAt": "2025-09-06T20:57:32.563Z"
+  }
+]

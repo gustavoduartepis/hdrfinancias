@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { StorageService } from '../utils/storage';
+import { ApiService, type LoginResponse } from '../services/apiService';
 
 interface User {
   id: string;
@@ -83,58 +84,95 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Get fresh users from storage
-    const currentUsers = getStoredUsers();
-    const foundUser = currentUsers.find(u => u.email === email && u.password === password);
-    
-    if (foundUser) {
-      const { password: _, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword);
-      const success = StorageService.setItem('audiovisual_user', userWithoutPassword);
-      console.log('Login realizado:', userWithoutPassword.email, 'Salvo:', success);
-      return true;
+    try {
+      console.log('🔐 Tentando fazer login:', { email });
+      
+      // Tentar login via API primeiro
+      const apiResponse = await ApiService.login(email, password);
+      
+      if (apiResponse.data && !apiResponse.error) {
+        console.log('✅ Login via API bem-sucedido:', { userId: apiResponse.data.user.id, email: apiResponse.data.user.email });
+        setUser(apiResponse.data.user);
+        ApiService.setToken(apiResponse.data.token);
+        StorageService.setItem('audiovisual_user', apiResponse.data.user);
+        StorageService.setItem('api_token', apiResponse.data.token);
+        return true;
+      }
+      
+      // Fallback para localStorage se API não estiver disponível
+      console.log('⚠️ API indisponível, tentando login local');
+      const currentUsers = getStoredUsers();
+      const foundUser = currentUsers.find(u => u.email === email && u.password === password);
+      
+      if (foundUser) {
+        const { password: _, ...userWithoutPassword } = foundUser;
+        setUser(userWithoutPassword);
+        const success = StorageService.setItem('audiovisual_user', userWithoutPassword);
+        console.log('✅ Login local bem-sucedido:', userWithoutPassword.email, 'Salvo:', success);
+        return true;
+      } else {
+        console.log('❌ Credenciais inválidas');
+        return false;
+      }
+    } catch (error) {
+      console.error('❌ Erro no login:', error);
+      return false;
     }
-    
-    return false;
   };
 
   const register = async (email: string, password: string, name: string, role: 'admin' | 'user' = 'user'): Promise<boolean> => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Get fresh users from storage
-    const currentUsers = getStoredUsers();
-    
-    // Check if user already exists
-    const existingUser = currentUsers.find(u => u.email === email);
-    if (existingUser) {
+    try {
+      console.log('📝 Tentando registrar usuário:', { email, name, role });
+      
+      // Tentar registro via API primeiro
+      const apiResponse = await ApiService.register(email, password, name, role);
+      
+      if (apiResponse.data && !apiResponse.error) {
+        console.log('✅ Registro via API bem-sucedido:', { userId: apiResponse.data.user.id, email });
+        setUser(apiResponse.data.user);
+        ApiService.setToken(apiResponse.data.token);
+        StorageService.setItem('audiovisual_user', apiResponse.data.user);
+        StorageService.setItem('api_token', apiResponse.data.token);
+        return true;
+      }
+      
+      // Fallback para localStorage se API não estiver disponível
+      console.log('⚠️ API indisponível, registrando localmente');
+      const currentUsers = getStoredUsers();
+      
+      // Check if user already exists
+      const existingUser = currentUsers.find(u => u.email === email);
+      if (existingUser) {
+        console.log('❌ Email já cadastrado:', email);
+        return false;
+      }
+      
+      const newUser: User = {
+        id: Date.now().toString(),
+        email,
+        name,
+        role
+      };
+      
+      // Add new user to the list and save to storage
+      const updatedUsers = [...currentUsers, { ...newUser, password }];
+      const usersSaved = saveUsers(updatedUsers);
+      
+      setUser(newUser);
+      const userSaved = StorageService.setItem('audiovisual_user', newUser);
+      console.log('✅ Usuário registrado localmente:', newUser.email, 'Usuários salvos:', usersSaved, 'Usuário salvo:', userSaved);
+      return usersSaved && userSaved;
+    } catch (error) {
+      console.error('❌ Erro no registro:', error);
       return false;
     }
-    
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      name,
-      role
-    };
-    
-    // Add new user to the list and save to storage
-    const updatedUsers = [...currentUsers, { ...newUser, password }];
-    const usersSaved = saveUsers(updatedUsers);
-    
-    setUser(newUser);
-    const userSaved = StorageService.setItem('audiovisual_user', newUser);
-    console.log('Registro realizado:', newUser.email, 'Usuários salvos:', usersSaved, 'Usuário salvo:', userSaved);
-    return usersSaved && userSaved;
   };
 
   const logout = () => {
-    console.log('Logout realizado');
+    console.log('🚪 Fazendo logout');
     setUser(null);
     StorageService.removeItem('audiovisual_user');
+    ApiService.clearToken();
   };
 
   const value: AuthContextType = {
