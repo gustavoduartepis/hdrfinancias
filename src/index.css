@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@200;300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-hdr-gray-light text-hdr-black;
+    font-family: 'Inter', 'Poppins', 'Montserrat', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-hdr-yellow focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  
+  .btn-primary {
+    @apply bg-hdr-yellow text-hdr-black hover:bg-yellow-400 hover:shadow-md;
+  }
+  
+  .btn-secondary {
+    @apply bg-hdr-black text-hdr-white hover:bg-gray-800 hover:shadow-md;
+  }
+  
+  .card {
+    @apply rounded-lg border border-gray-200 bg-hdr-white shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+  
+  .hdr-asterisk {
+    @apply text-hdr-yellow font-bold;
+  }
+  
+  .hdr-logo {
+    font-family: 'Oswald', 'Inter', sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+}
