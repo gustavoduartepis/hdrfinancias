@@ -1,7 +1,7 @@
 // Serviço para comunicação com a API backend
 
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://hdr-backend-gustavoduartepis.vercel.app/api'
+  ? 'https://hdr-backend-gustavoduartepis-projects.vercel.app/api'
   : 'http://localhost:3001/api';
 
 interface ApiResponse<T> {
