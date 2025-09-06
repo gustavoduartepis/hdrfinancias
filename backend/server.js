@@ -409,6 +409,31 @@ app.post('/api/sync', authenticateToken, async (req, res) => {
   }
 });
 
+// Rota raiz
+app.get('/', (req, res) => {
+  res.json({
+    message: 'HDR API Backend',
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth/login, /api/auth/register',
+      data: '/api/transactions, /api/clients',
+      sync: '/api/sync',
+      status: '/api/status, /api/health'
+    }
+  });
+});
+
+// Rota de health check
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // Rota de status
 app.get('/api/status', (req, res) => {
   res.json({
