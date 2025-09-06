@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import type { ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { StorageService } from '../utils/storage';
 
-export interface User {
+interface User {
   id: string;
   email: string;
   name: string;
@@ -37,22 +37,22 @@ const defaultUsers: (User & { password: string })[] = [
   }
 ];
 
-// Get users from localStorage or use default users
+// Get users from storage or use default users
 const getStoredUsers = (): (User & { password: string })[] => {
-  const stored = localStorage.getItem('audiovisual_users');
-  if (stored) {
-    try {
-      return JSON.parse(stored);
-    } catch {
-      return defaultUsers;
-    }
+  const stored = StorageService.getItem<(User & { password: string })[]>('audiovisual_users');
+  if (stored && Array.isArray(stored)) {
+    console.log('Usuários carregados do storage:', stored.length);
+    return stored;
   }
+  console.log('Usando usuários padrão');
   return defaultUsers;
 };
 
-// Save users to localStorage
+// Save users to storage
 const saveUsers = (users: (User & { password: string })[]) => {
-  localStorage.setItem('audiovisual_users', JSON.stringify(users));
+  const success = StorageService.setItem('audiovisual_users', users);
+  console.log('Salvando usuários:', success ? 'sucesso' : 'falhou', users.length);
+  return success;
 };
 
 // Initialize users from storage
@@ -61,16 +61,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
+    // Log storage info for debugging
+    const storageInfo = StorageService.getStorageInfo();
+    console.log('Storage disponível:', storageInfo);
+    
     // Initialize default users if not exists
-    const stored = localStorage.getItem('audiovisual_users');
-    if (!stored) {
+    const stored = StorageService.getItem<(User & { password: string })[]>('audiovisual_users');
+    if (!stored || !Array.isArray(stored)) {
+      console.log('Inicializando usuários padrão');
       saveUsers(defaultUsers);
     }
     
     // Check if user is logged in on app start
-    const savedUser = localStorage.getItem('audiovisual_user');
+    const savedUser = StorageService.getItem<User>('audiovisual_user');
     if (savedUser) {
-      setUser(JSON.parse(savedUser));
+      console.log('Usuário logado encontrado:', savedUser.email);
+      setUser(savedUser);
+    } else {
+      console.log('Nenhum usuário logado encontrado');
     }
   }, []);
 
@@ -85,7 +93,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (foundUser) {
       const { password: _, ...userWithoutPassword } = foundUser;
       setUser(userWithoutPassword);
-      localStorage.setItem('audiovisual_user', JSON.stringify(userWithoutPassword));
+      const success = StorageService.setItem('audiovisual_user', userWithoutPassword);
+      console.log('Login realizado:', userWithoutPassword.email, 'Salvo:', success);
       return true;
     }
     
@@ -112,18 +121,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       role
     };
     
-    // Add new user to the list and save to localStorage
+    // Add new user to the list and save to storage
     const updatedUsers = [...currentUsers, { ...newUser, password }];
-    saveUsers(updatedUsers);
+    const usersSaved = saveUsers(updatedUsers);
     
     setUser(newUser);
-    localStorage.setItem('audiovisual_user', JSON.stringify(newUser));
-    return true;
+    const userSaved = StorageService.setItem('audiovisual_user', newUser);
+    console.log('Registro realizado:', newUser.email, 'Usuários salvos:', usersSaved, 'Usuário salvo:', userSaved);
+    return usersSaved && userSaved;
   };
 
   const logout = () => {
+    console.log('Logout realizado');
     setUser(null);
-    localStorage.removeItem('audiovisual_user');
+    StorageService.removeItem('audiovisual_user');
   };
 
   const value: AuthContextType = {

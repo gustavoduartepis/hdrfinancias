@@ -2,6 +2,7 @@ import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { ExcelService } from '../services/excelService';
+import { StorageService } from '../utils/storage';
 import type { ExportData } from '../services/excelService';
 
 // Types
@@ -156,19 +157,23 @@ const getStorageKey = (userId: string, dataType: 'transactions' | 'clients') => 
 const saveToStorage = (userId: string, dataType: 'transactions' | 'clients', data: any) => {
   try {
     const key = getStorageKey(userId, dataType);
-    localStorage.setItem(key, JSON.stringify(data));
+    const success = StorageService.setItem(key, data);
+    console.log(`Salvando ${dataType} para usuário ${userId}:`, success ? 'sucesso' : 'falhou', data.length);
+    return success;
   } catch (error) {
-    console.error('Erro ao salvar dados no localStorage:', error);
+    console.error('Erro ao salvar dados no storage:', error);
+    return false;
   }
 };
 
 const loadFromStorage = (userId: string, dataType: 'transactions' | 'clients') => {
   try {
     const key = getStorageKey(userId, dataType);
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : [];
+    const data = StorageService.getItem(key, []);
+    console.log(`Carregando ${dataType} para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
+    return Array.isArray(data) ? data : [];
   } catch (error) {
-    console.error('Erro ao carregar dados do localStorage:', error);
+    console.error('Erro ao carregar dados do storage:', error);
     return [];
   }
 };
@@ -177,17 +182,19 @@ const loadFromStorage = (userId: string, dataType: 'transactions' | 'clients') =
 const migrateExistingData = (userId: string) => {
   try {
     // Check for old data format
-    const oldTransactions = localStorage.getItem('audiovisual_transactions');
-    const oldClients = localStorage.getItem('audiovisual_clients');
+    const oldTransactions = StorageService.getItem('audiovisual_transactions');
+    const oldClients = StorageService.getItem('audiovisual_clients');
     
-    if (oldTransactions && !localStorage.getItem(getStorageKey(userId, 'transactions'))) {
-      localStorage.setItem(getStorageKey(userId, 'transactions'), oldTransactions);
-      localStorage.removeItem('audiovisual_transactions');
+    if (oldTransactions && !StorageService.getItem(getStorageKey(userId, 'transactions'))) {
+      console.log('Migrando transações antigas para o usuário:', userId);
+      StorageService.setItem(getStorageKey(userId, 'transactions'), oldTransactions);
+      StorageService.removeItem('audiovisual_transactions');
     }
     
-    if (oldClients && !localStorage.getItem(getStorageKey(userId, 'clients'))) {
-      localStorage.setItem(getStorageKey(userId, 'clients'), oldClients);
-      localStorage.removeItem('audiovisual_clients');
+    if (oldClients && !StorageService.getItem(getStorageKey(userId, 'clients'))) {
+      console.log('Migrando clientes antigos para o usuário:', userId);
+      StorageService.setItem(getStorageKey(userId, 'clients'), oldClients);
+      StorageService.removeItem('audiovisual_clients');
     }
   } catch (error) {
     console.error('Erro ao migrar dados existentes:', error);
@@ -202,6 +209,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Load user data when user changes
   useEffect(() => {
     if (user) {
+      console.log('Carregando dados para usuário:', user.email, user.id);
+      
       // Migrate existing data if needed
       migrateExistingData(user.id);
       
@@ -211,6 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'SET_TRANSACTIONS', payload: userTransactions });
       dispatch({ type: 'SET_CLIENTS', payload: userClients });
     } else {
+      console.log('Usuário deslogado, limpando dados');
       // Clear data when user logs out
       dispatch({ type: 'SET_TRANSACTIONS', payload: [] });
       dispatch({ type: 'SET_CLIENTS', payload: [] });
