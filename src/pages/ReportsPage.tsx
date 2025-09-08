@@ -1,15 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { 
-  BarChart3, 
   TrendingUp, 
   TrendingDown,
   DollarSign,
   Calendar,
-  Download,
-  Filter,
-  CalendarDays,
-  Users,
-  Target
+  CalendarDays
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import {
@@ -20,7 +15,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  LineChart,
   Line,
   PieChart,
   Pie,
@@ -37,12 +31,10 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const formatDate = (date: Date) => {
-  return date.toLocaleDateString('pt-BR');
-};
+//
 
 export const ReportsPage: React.FC = () => {
-  const { state, getTotalIncome, getTotalExpenses, getBalance } = useApp();
+  const { state } = useApp();
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>('30d');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -450,7 +442,7 @@ export const ReportsPage: React.FC = () => {
                 width={100}
               />
               <Tooltip 
-                formatter={(value, name, props) => [
+                formatter={(value, _unused, props) => [
                   `R$ ${value.toLocaleString()}`, 
                   `Receita (${props.payload.count} transações)`
                 ]}
