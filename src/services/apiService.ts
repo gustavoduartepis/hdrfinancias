@@ -1,6 +1,6 @@
 // Serviço para comunicação com a API backend
 
-const API_BASE_URL = process.env.NODE_ENV === 'production' 
+const API_BASE_URL = import.meta.env.PROD 
   ? 'https://hdr-backend-gustavoduartepis-projects.vercel.app/api'
   : 'http://localhost:3001/api';
 
@@ -15,7 +15,7 @@ interface LoginResponse {
     id: string;
     email: string;
     name: string;
-    role: string;
+    role: 'admin' | 'user';
   };
   token: string;
 }
@@ -81,7 +81,7 @@ class ApiService {
       };
 
       if (token) {
-        headers.Authorization = `Bearer ${token}`;
+        (headers as any).Authorization = `Bearer ${token}`;
       }
 
       const response = await fetch(url, {

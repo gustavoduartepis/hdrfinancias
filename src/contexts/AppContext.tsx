@@ -4,7 +4,8 @@ import { useAuth } from './AuthContext';
 import { ExcelService } from '../services/excelService';
 import { StorageService } from '../utils/storage';
 import type { ExportData } from '../services/excelService';
-import { ApiService, type Transaction as ApiTransaction, type Client as ApiClient } from '../services/apiService';
+import { ApiService } from '../services/apiService';
+import { useNotifications } from './NotificationContext';
 
 // Types
 export interface Transaction {
@@ -163,12 +164,13 @@ const saveToStorage = async (userId: string, dataType: 'transactions' | 'clients
     const isOnline = await ApiService.isOnline();
     if (isOnline) {
       console.log(`🌐 API online, sincronizando ${dataType}...`);
-      const syncResponse = await ApiService.syncData({ [dataType]: data });
-      if (syncResponse.data && !syncResponse.error) {
-        console.log(`✅ ${dataType} sincronizados com API`);
-      } else {
-        console.log(`⚠️ Erro na sincronização de ${dataType}, salvando localmente`);
-      }
+      // TODO: Implementar sincronização específica por tipo
+       // const syncResponse = await ApiService.syncData({ [dataType]: data });
+       // if (syncResponse.data && !syncResponse.error) {
+       //   console.log(`✅ ${dataType} sincronizados com API`);
+       // } else {
+       //   console.log(`⚠️ Erro na sincronização de ${dataType}, salvando localmente`);
+       // }
     }
     
     // Sempre salvar localmente como backup
@@ -181,34 +183,124 @@ const saveToStorage = async (userId: string, dataType: 'transactions' | 'clients
   }
 };
 
-const loadFromStorage = async (userId: string, dataType: 'transactions' | 'clients') => {
+const loadTransactionsFromStorage = async (userId: string, addNotification: (notification: any) => void): Promise<Transaction[]> => {
   try {
     // Tentar carregar da API primeiro
     const isOnline = await ApiService.isOnline();
     if (isOnline) {
-      console.log(`🌐 API online, carregando ${dataType} da API...`);
+      console.log('🌐 API online, carregando transactions da API...');
       
-      const response = dataType === 'transactions' 
-        ? await ApiService.getTransactions()
-        : await ApiService.getClients();
+      const response = await ApiService.getTransactions();
       
       if (response.data && !response.error) {
-        console.log(`✅ ${dataType} carregados da API:`, response.data.length);
+        console.log('✅ Transactions carregados da API:', response.data.length);
         // Salvar localmente como backup
-        const key = getStorageKey(userId, dataType);
+        const key = getStorageKey(userId, 'transactions');
         StorageService.setItem(key, response.data);
+        
+        addNotification({
+          type: 'success',
+          title: 'Sincronização Concluída',
+          message: `${response.data.length} transações carregadas da nuvem`,
+          duration: 3000
+        });
+        
         return response.data;
       }
     }
     
     // Fallback para dados locais
-    console.log(`📂 Carregando ${dataType} locais...`);
-    const key = getStorageKey(userId, dataType);
+    console.log('📂 Carregando transactions locais...');
+    const key = getStorageKey(userId, 'transactions');
     const data = StorageService.getItem(key, []);
-    console.log(`Carregando ${dataType} para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
+    console.log(`Carregando transactions para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
+    
+    if (Array.isArray(data) && data.length > 0) {
+      addNotification({
+        type: 'warning',
+        title: 'Modo Offline',
+        message: 'Carregando dados locais. Sincronização automática quando voltar online.',
+        duration: 4000
+      });
+    }
+    
     return Array.isArray(data) ? data : [];
   } catch (error) {
-    console.error('Erro ao carregar dados do storage:', error);
+    console.error('Erro ao carregar transactions do storage:', error);
+    addNotification({
+      type: 'error',
+      title: 'Erro ao Carregar Dados',
+      message: 'Não foi possível carregar as transações. Verifique sua conexão.',
+      duration: 5000
+    });
+    return [];
+  }
+};
+
+const loadClientsFromStorage = async (userId: string, addNotification: (notification: any) => void): Promise<Client[]> => {
+  try {
+    // Tentar carregar da API primeiro
+    const isOnline = await ApiService.isOnline();
+    if (isOnline) {
+      console.log('🌐 API online, carregando clients da API...');
+      
+      const response = await ApiService.getClients();
+      
+      if (response.data && !response.error) {
+        console.log('✅ Clients carregados da API:', response.data.length);
+        // Mapear dados da API para o formato do AppContext
+        const mappedClients: Client[] = response.data.map(apiClient => ({
+          id: apiClient.id,
+          name: apiClient.name,
+          email: apiClient.email,
+          phone: apiClient.phone,
+          company: apiClient.company || '',
+          contractProposal: '',
+          address: '',
+          totalRevenue: apiClient.totalRevenue || 0,
+          lastProject: '',
+          status: apiClient.status,
+          contractType: 'project' as const
+        }));
+        // Salvar localmente como backup
+        const key = getStorageKey(userId, 'clients');
+        StorageService.setItem(key, mappedClients);
+        
+        addNotification({
+          type: 'success',
+          title: 'Sincronização Concluída',
+          message: `${mappedClients.length} clientes carregados da nuvem`,
+          duration: 3000
+        });
+        
+        return mappedClients;
+      }
+    }
+    
+    // Fallback para dados locais
+    console.log('📂 Carregando clients locais...');
+    const key = getStorageKey(userId, 'clients');
+    const data = StorageService.getItem(key, []);
+    console.log(`Carregando clients para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
+    
+    if (Array.isArray(data) && data.length > 0) {
+      addNotification({
+        type: 'warning',
+        title: 'Modo Offline',
+        message: 'Carregando dados locais. Sincronização automática quando voltar online.',
+        duration: 4000
+      });
+    }
+    
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.error('Erro ao carregar clients do storage:', error);
+    addNotification({
+      type: 'error',
+      title: 'Erro ao Carregar Dados',
+      message: 'Não foi possível carregar os clientes. Verifique sua conexão.',
+      duration: 5000
+    });
     return [];
   }
 };
@@ -240,6 +332,7 @@ const migrateExistingData = (userId: string) => {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
   const { user } = useAuth();
+  const { addNotification } = useNotifications();
 
   // Load user data when user changes
   useEffect(() => {
@@ -250,8 +343,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Migrate existing data if needed
         migrateExistingData(user.id);
         
-        const userTransactions = await loadFromStorage(user.id, 'transactions');
-        const userClients = await loadFromStorage(user.id, 'clients');
+        const userTransactions = await loadTransactionsFromStorage(user.id, addNotification);
+        const userClients = await loadClientsFromStorage(user.id, addNotification);
         
         dispatch({ type: 'SET_TRANSACTIONS', payload: userTransactions });
         dispatch({ type: 'SET_CLIENTS', payload: userClients });
@@ -310,6 +403,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Adicionar localmente primeiro
     dispatch({ type: 'ADD_TRANSACTION', payload: newTransaction });
     
+    addNotification({
+      type: 'success',
+      title: 'Transação Adicionada',
+      message: `${transaction.type === 'income' ? 'Receita' : 'Despesa'} de R$ ${transaction.amount.toLocaleString('pt-BR')} adicionada com sucesso`,
+      duration: 3000
+    });
+    
     // Tentar sincronizar com API
     try {
       const isOnline = await ApiService.isOnline();
@@ -317,10 +417,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const response = await ApiService.createTransaction(newTransaction);
         if (response.data && !response.error) {
           console.log('✅ Transação sincronizada com API');
+          addNotification({
+            type: 'info',
+            title: 'Sincronizado',
+            message: 'Transação sincronizada com a nuvem',
+            duration: 2000
+          });
         }
+      } else {
+        addNotification({
+          type: 'warning',
+          title: 'Modo Offline',
+          message: 'Transação salva localmente. Será sincronizada quando voltar online.',
+          duration: 4000
+        });
       }
     } catch (error) {
       console.error('⚠️ Erro ao sincronizar transação:', error);
+      addNotification({
+        type: 'error',
+        title: 'Erro de Sincronização',
+        message: 'Transação salva localmente, mas não foi possível sincronizar com a nuvem',
+        duration: 5000
+      });
     }
   };
 
@@ -341,6 +460,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Adicionar localmente primeiro
     dispatch({ type: 'ADD_CLIENT', payload: newClient });
     
+    addNotification({
+      type: 'success',
+      title: 'Cliente Adicionado',
+      message: `Cliente "${client.name}" adicionado com sucesso`,
+      duration: 3000
+    });
+    
     // Tentar sincronizar com API
     try {
       const isOnline = await ApiService.isOnline();
@@ -348,10 +474,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const response = await ApiService.createClient(newClient);
         if (response.data && !response.error) {
           console.log('✅ Cliente sincronizado com API');
+          addNotification({
+            type: 'info',
+            title: 'Sincronizado',
+            message: 'Cliente sincronizado com a nuvem',
+            duration: 2000
+          });
         }
+      } else {
+        addNotification({
+          type: 'warning',
+          title: 'Modo Offline',
+          message: 'Cliente salvo localmente. Será sincronizado quando voltar online.',
+          duration: 4000
+        });
       }
     } catch (error) {
       console.error('⚠️ Erro ao sincronizar cliente:', error);
+      addNotification({
+        type: 'error',
+        title: 'Erro de Sincronização',
+        message: 'Cliente salvo localmente, mas não foi possível sincronizar com a nuvem',
+        duration: 5000
+      });
     }
   };
 

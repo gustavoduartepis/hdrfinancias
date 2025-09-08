@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { StorageService } from '../utils/storage';
-import { ApiService, type LoginResponse } from '../services/apiService';
+import { ApiService } from '../services/apiService';
 
 interface User {
   id: string;
@@ -92,9 +92,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       if (apiResponse.data && !apiResponse.error) {
         console.log('✅ Login via API bem-sucedido:', { userId: apiResponse.data.user.id, email: apiResponse.data.user.email });
-        setUser(apiResponse.data.user);
+        const user = { ...apiResponse.data.user, role: apiResponse.data.user.role as 'admin' | 'user' };
+        setUser(user);
         ApiService.setToken(apiResponse.data.token);
-        StorageService.setItem('audiovisual_user', apiResponse.data.user);
+        StorageService.setItem('audiovisual_user', user);
         StorageService.setItem('api_token', apiResponse.data.token);
         return true;
       }
@@ -129,9 +130,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       if (apiResponse.data && !apiResponse.error) {
         console.log('✅ Registro via API bem-sucedido:', { userId: apiResponse.data.user.id, email });
-        setUser(apiResponse.data.user);
+        const user = { ...apiResponse.data.user, role: apiResponse.data.user.role as 'admin' | 'user' };
+        setUser(user);
         ApiService.setToken(apiResponse.data.token);
-        StorageService.setItem('audiovisual_user', apiResponse.data.user);
+        StorageService.setItem('audiovisual_user', user);
         StorageService.setItem('api_token', apiResponse.data.token);
         return true;
       }

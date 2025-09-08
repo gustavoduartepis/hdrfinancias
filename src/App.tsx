@@ -2,6 +2,8 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AppProvider } from './contexts/AppContext';
+import { NotificationProvider } from './contexts/NotificationContext';
+import { NotificationContainer } from './components/notifications/NotificationContainer';
 import { AuthPage } from './pages/AuthPage';
 import { MainLayout } from './components/layout/MainLayout';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
@@ -22,17 +24,20 @@ const AppContent: React.FC = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppProvider>
-        <Router>
-          <div className="min-h-screen bg-gray-50">
-            <Routes>
-              <Route path="/*" element={<AppContent />} />
-            </Routes>
-          </div>
-        </Router>
-      </AppProvider>
-    </AuthProvider>
+    <NotificationProvider>
+      <AuthProvider>
+        <AppProvider>
+          <Router>
+            <div className="min-h-screen bg-gray-50">
+              <Routes>
+                <Route path="/*" element={<AppContent />} />
+              </Routes>
+              <NotificationContainer />
+            </div>
+          </Router>
+        </AppProvider>
+      </AuthProvider>
+    </NotificationProvider>
   );
 }
 

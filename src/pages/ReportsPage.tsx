@@ -1,105 +1,225 @@
 import React, { useState, useMemo } from 'react';
 import { 
   BarChart3, 
-  PieChart, 
   TrendingUp, 
   TrendingDown,
   DollarSign,
   Calendar,
-  Download
+  Download,
+  Filter,
+  CalendarDays,
+  Users,
+  Target
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+  ComposedChart
+} from 'recharts';
 
-type ReportPeriod = 'current_month' | 'last_month' | 'custom' | 'last_3_months' | 'last_6_months';
-type ChartType = 'bar' | 'pie' | 'line';
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(value);
+};
+
+const formatDate = (date: Date) => {
+  return date.toLocaleDateString('pt-BR');
+};
 
 export const ReportsPage: React.FC = () => {
-  const { state } = useApp();
-  const [selectedPeriod, setSelectedPeriod] = useState<ReportPeriod>('current_month');
-  const [selectedChart, setSelectedChart] = useState<ChartType>('bar');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
+  const { state, getTotalIncome, getTotalExpenses, getBalance } = useApp();
+  const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | '1y' | 'all'>('30d');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
-  // Filter transactions based on selected period
+  // Filtrar transações por período
   const filteredTransactions = useMemo(() => {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    let startDate: Date;
+
+    switch (dateRange) {
+      case '7d':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '30d':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case '90d':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case '1y':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        return state.transactions;
+    }
     
     return state.transactions.filter(transaction => {
       const transactionDate = new Date(transaction.date);
+      const categoryMatch = selectedCategory === 'all' || transaction.category === selectedCategory;
+      return transactionDate >= startDate && categoryMatch;
+    });
+  }, [state.transactions, dateRange, selectedCategory]);
+
+  // Dados calculados dinamicamente
+  const getMonthlyData = () => {
+    const monthlyStats: { [key: string]: { receita: number; despesa: number; lucro: number; transacoes: number } } = {};
+    
+    filteredTransactions.forEach(transaction => {
+      const date = new Date(transaction.date);
+      const monthKey = date.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
       
-      switch (selectedPeriod) {
-        case 'current_month':
-          return transactionDate.getMonth() === currentMonth && 
-                 transactionDate.getFullYear() === currentYear;
-        
-        case 'last_month':
-          const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
-          const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
-          return transactionDate.getMonth() === lastMonth && 
-                 transactionDate.getFullYear() === lastMonthYear;
-        
-        case 'last_3_months':
-          const threeMonthsAgo = new Date(currentYear, currentMonth - 3, 1);
-          return transactionDate >= threeMonthsAgo;
-        
-        case 'last_6_months':
-          const sixMonthsAgo = new Date(currentYear, currentMonth - 6, 1);
-          return transactionDate >= sixMonthsAgo;
-        
-        case 'custom':
-          if (customStartDate && customEndDate) {
-            const startDate = new Date(customStartDate);
-            const endDate = new Date(customEndDate);
-            return transactionDate >= startDate && transactionDate <= endDate;
-          }
-          return true;
-        
-        default:
-          return true;
+      if (!monthlyStats[monthKey]) {
+        monthlyStats[monthKey] = { receita: 0, despesa: 0, lucro: 0, transacoes: 0 };
+      }
+      
+      monthlyStats[monthKey].transacoes += 1;
+      
+      if (transaction.type === 'income') {
+        monthlyStats[monthKey].receita += transaction.amount;
+      } else {
+        monthlyStats[monthKey].despesa += transaction.amount;
       }
     });
-  }, [state.transactions, selectedPeriod, customStartDate, customEndDate]);
+    
+    return Object.entries(monthlyStats).map(([month, data]) => ({
+      month,
+      receita: data.receita,
+      despesa: data.despesa,
+      lucro: data.receita - data.despesa,
+      transacoes: data.transacoes
+    }));
+  };
 
-  // Calculate real data from filtered transactions
-  const reportData = useMemo(() => {
-    const income = filteredTransactions.filter(t => t.type === 'income');
-    const expenses = filteredTransactions.filter(t => t.type === 'expense');
+  const getCategoryData = () => {
+    const categoryStats: { [key: string]: { receita: number; despesa: number; count: number } } = {};
     
-    const totalIncome = income.reduce((sum, t) => sum + t.amount, 0);
-    const totalExpenses = expenses.reduce((sum, t) => sum + t.amount, 0);
-    const netProfit = totalIncome - totalExpenses;
-    const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+    filteredTransactions.forEach(transaction => {
+      if (!categoryStats[transaction.category]) {
+        categoryStats[transaction.category] = { receita: 0, despesa: 0, count: 0 };
+      }
+      
+      categoryStats[transaction.category].count += 1;
+      
+      if (transaction.type === 'income') {
+        categoryStats[transaction.category].receita += transaction.amount;
+      } else {
+        categoryStats[transaction.category].despesa += transaction.amount;
+      }
+    });
     
-    // Group by category
-    const incomeByCategory = income.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + t.amount;
-      return acc;
-    }, {} as Record<string, number>);
+    const colors = ['#FFD11A', '#000000', '#6b7280', '#9ca3af', '#d1d5db', '#f3f4f6', '#e5e7eb'];
     
-    const expensesByCategory = expenses.reduce((acc, t) => {
-      acc[t.category] = (acc[t.category] || 0) + t.amount;
-      return acc;
-    }, {} as Record<string, number>);
+    return Object.entries(categoryStats)
+      .map(([name, data], index) => ({
+        name,
+        receita: data.receita,
+        despesa: data.despesa,
+        total: data.receita + data.despesa,
+        count: data.count,
+        color: colors[index % colors.length]
+      }))
+      .sort((a, b) => b.total - a.total);
+  };
+
+  const getClientRevenueData = () => {
+    const clientStats: { [key: string]: { receita: number; count: number } } = {};
+    
+    filteredTransactions
+      .filter(t => t.type === 'income' && t.client)
+      .forEach(transaction => {
+        if (!clientStats[transaction.client!]) {
+          clientStats[transaction.client!] = { receita: 0, count: 0 };
+        }
+        clientStats[transaction.client!].receita += transaction.amount;
+        clientStats[transaction.client!].count += 1;
+      });
+    
+    const colors = ['#FFD11A', '#000000', '#6b7280', '#9ca3af', '#d1d5db'];
+    
+    return Object.entries(clientStats)
+      .map(([name, data], index) => ({
+        name,
+        value: data.receita,
+        count: data.count,
+        color: colors[index % colors.length]
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10); // Top 10 clientes
+  };
+
+  const getDailyData = () => {
+    const dailyStats: { [key: string]: { receita: number; despesa: number; lucro: number } } = {};
+    
+    filteredTransactions.forEach(transaction => {
+      const date = new Date(transaction.date);
+      const dayKey = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      
+      if (!dailyStats[dayKey]) {
+        dailyStats[dayKey] = { receita: 0, despesa: 0, lucro: 0 };
+      }
+      
+      if (transaction.type === 'income') {
+        dailyStats[dayKey].receita += transaction.amount;
+      } else {
+        dailyStats[dayKey].despesa += transaction.amount;
+      }
+    });
+    
+    return Object.entries(dailyStats)
+      .map(([day, data]) => ({
+        day,
+        receita: data.receita,
+        despesa: data.despesa,
+        lucro: data.receita - data.despesa
+      }))
+      .sort((a, b) => new Date(a.day.split('/').reverse().join('-')).getTime() - new Date(b.day.split('/').reverse().join('-')).getTime());
+  };
+
+  const monthlyData = getMonthlyData();
+  const categoryData = getCategoryData();
+  const clientRevenueData = getClientRevenueData();
+  const dailyData = getDailyData();
+
+  // Estatísticas do período selecionado
+  const periodStats = useMemo(() => {
+    const totalIncome = filteredTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const totalExpenses = filteredTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const totalTransactions = filteredTransactions.length;
+    const uniqueClients = new Set(filteredTransactions
+      .filter(t => t.client)
+      .map(t => t.client)).size;
     
     return {
       totalIncome,
       totalExpenses,
-      netProfit,
-      profitMargin,
-      incomeByCategory,
-      expensesByCategory,
-      transactionCount: filteredTransactions.length
+      balance: totalIncome - totalExpenses,
+      totalTransactions,
+      uniqueClients
     };
   }, [filteredTransactions]);
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
-  };
+  const categories = ['all', ...Array.from(new Set(state.transactions.map(t => t.category)))];
 
   return (
     <div className="space-y-6">
@@ -111,86 +231,60 @@ export const ReportsPage: React.FC = () => {
             <span className="text-3xl font-bold text-hdr-yellow hdr-asterisk">*</span>
           </div>
           <p className="text-gray-600 mt-1">
-            Análises e gráficos financeiros
+            Análise detalhada do desempenho financeiro
           </p>
         </div>
-        <div className="flex items-center space-x-3">
-          <button className="bg-hdr-yellow text-hdr-black px-4 py-2 rounded-lg hover:bg-yellow-400 hover:shadow-md transition-all duration-200 flex items-center space-x-2 font-medium">
-            <Download className="w-4 h-4" />
-            <span>Exportar PDF</span>
-          </button>
+        <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <Calendar className="w-4 h-4 text-hdr-yellow" />
+          <span>Atualizado em tempo real</span>
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filtros */}
       <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
-        <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex items-center space-x-2">
-              <Calendar className="w-5 h-5 text-hdr-yellow" />
-              <label className="text-sm font-medium text-gray-700">Período:</label>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Período
+            </label>
               <select
-                value={selectedPeriod}
-                onChange={(e) => setSelectedPeriod(e.target.value as ReportPeriod)}
-                className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-hdr-yellow focus:border-hdr-yellow"
-              >
-                <option value="current_month">Este mês</option>
-                <option value="last_month">Mês passado</option>
-                <option value="last_3_months">Últimos 3 meses</option>
-                <option value="last_6_months">Últimos 6 meses</option>
-                <option value="custom">Data específica</option>
+              value={dateRange}
+              onChange={(e) => setDateRange(e.target.value as any)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-hdr-yellow focus:border-hdr-yellow"
+            >
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d">Últimos 30 dias</option>
+              <option value="90d">Últimos 90 dias</option>
+              <option value="1y">Último ano</option>
+              <option value="all">Todo o período</option>
               </select>
             </div>
-            
-            <div className="flex items-center space-x-2">
-              <BarChart3 className="w-5 h-5 text-hdr-yellow" />
-              <label className="text-sm font-medium text-gray-700">Tipo de Gráfico:</label>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Categoria
+            </label>
               <select
-                value={selectedChart}
-                onChange={(e) => setSelectedChart(e.target.value as ChartType)}
-                className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-hdr-yellow focus:border-hdr-yellow"
-              >
-                <option value="bar">Barras</option>
-                <option value="line">Linha</option>
-                <option value="pie">Pizza</option>
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-hdr-yellow focus:border-hdr-yellow"
+            >
+              <option value="all">Todas as categorias</option>
+              {categories.slice(1).map(category => (
+                <option key={category} value={category}>{category}</option>
+              ))}
               </select>
-            </div>
           </div>
-          
-          {/* Custom Date Range */}
-          {selectedPeriod === 'custom' && (
-            <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-gray-200">
-              <div className="flex items-center space-x-2">
-                <label className="text-sm font-medium text-gray-700">Data inicial:</label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-hdr-yellow focus:border-hdr-yellow"
-                />
-              </div>
-              <div className="flex items-center space-x-2">
-                <label className="text-sm font-medium text-gray-700">Data final:</label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-hdr-yellow focus:border-hdr-yellow"
-                />
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
+        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total de Receitas</p>
+              <p className="text-sm font-medium text-gray-600">Receita do Período</p>
               <p className="text-2xl font-bold text-hdr-yellow mt-2">
-                {formatCurrency(reportData.totalIncome)}
+                {formatCurrency(periodStats.totalIncome)}
               </p>
             </div>
             <div className="p-3 rounded-full bg-hdr-yellow bg-opacity-10">
@@ -199,12 +293,12 @@ export const ReportsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
+        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Total de Despesas</p>
+              <p className="text-sm font-medium text-gray-600">Despesas do Período</p>
               <p className="text-2xl font-bold text-gray-600 mt-2">
-                {formatCurrency(reportData.totalExpenses)}
+                {formatCurrency(periodStats.totalExpenses)}
               </p>
             </div>
             <div className="p-3 rounded-full bg-gray-100">
@@ -218,17 +312,13 @@ export const ReportsPage: React.FC = () => {
             <div>
               <p className="text-sm font-medium text-gray-600">Lucro Líquido</p>
               <p className={`text-2xl font-bold mt-2 ${
-                reportData.netProfit >= 0 ? 'text-hdr-yellow' : 'text-red-600'
+                periodStats.balance >= 0 ? 'text-hdr-black' : 'text-red-600'
               }`}>
-                {formatCurrency(reportData.netProfit)}
+                {formatCurrency(periodStats.balance)}
               </p>
             </div>
-            <div className={`p-3 rounded-full ${
-              reportData.netProfit >= 0 ? 'bg-hdr-yellow bg-opacity-10' : 'bg-red-100'
-            }`}>
-              <DollarSign className={`w-6 h-6 ${
-                reportData.netProfit >= 0 ? 'text-hdr-yellow' : 'text-red-600'
-              }`} />
+            <div className="p-3 rounded-full bg-hdr-black bg-opacity-10">
+              <DollarSign className="w-6 h-6 text-hdr-black" />
             </div>
           </div>
         </div>
@@ -236,187 +326,195 @@ export const ReportsPage: React.FC = () => {
         <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Margem de Lucro</p>
-              <p className={`text-2xl font-bold mt-2 ${
-                reportData.profitMargin >= 0 ? 'text-hdr-black' : 'text-red-600'
-              }`}>
-                {reportData.profitMargin.toFixed(1)}%
+              <p className="text-sm font-medium text-gray-600">Transações</p>
+              <p className="text-2xl font-bold text-hdr-black mt-2">
+                {periodStats.totalTransactions}
               </p>
             </div>
-            <div className="p-3 rounded-full bg-gray-100">
-              <PieChart className="w-6 h-6 text-hdr-black" />
+            <div className="p-3 rounded-full bg-blue-100">
+              <CalendarDays className="w-6 h-6 text-blue-600" />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Transactions List */}
-      <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-4 lg:px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <h3 className="text-lg font-semibold text-hdr-black">
-                Lançamentos do Período
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 lg:gap-6">
+        {/* Monthly Revenue vs Expenses */}
+        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-2 mb-4">
+            <h3 className="text-base lg:text-lg font-semibold text-hdr-black">
+              Receitas vs Despesas por Mês
               </h3>
-              <span className="text-lg font-bold text-hdr-yellow hdr-asterisk">*</span>
+            <span className="text-lg font-bold text-hdr-yellow">*</span>
             </div>
-            <span className="text-sm text-gray-500">
-              {reportData.transactionCount} lançamento(s)
-            </span>
+          <div className="h-64 sm:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={monthlyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="month" 
+                  fontSize={12}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis 
+                  fontSize={12}
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                />
+                <Tooltip 
+                  formatter={(value, name) => [
+                    `R$ ${value.toLocaleString()}`, 
+                    name === 'receita' ? 'Receita' : name === 'despesa' ? 'Despesa' : 'Lucro'
+                  ]}
+                  contentStyle={{ fontSize: '12px' }}
+                />
+                <Bar dataKey="receita" fill="#FFD11A" name="receita" />
+                <Bar dataKey="despesa" fill="#6b7280" name="despesa" />
+                <Line type="monotone" dataKey="lucro" stroke="#000000" strokeWidth={2} name="lucro" />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
         </div>
         
-        {filteredTransactions.length === 0 ? (
-          <div className="p-8 text-center">
-            <div className="text-gray-400 mb-2">
-              <BarChart3 className="w-12 h-12 mx-auto" />
-            </div>
-            <p className="text-gray-500">Nenhum lançamento encontrado para o período selecionado</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Data
-                  </th>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Descrição
-                  </th>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">
-                    Categoria
-                  </th>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden lg:table-cell">
-                    Cliente
-                  </th>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden xl:table-cell">
-                    Pessoa
-                  </th>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Tipo
-                  </th>
-                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Valor
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredTransactions.map((transaction) => (
-                  <tr key={transaction.id} className="hover:bg-gray-50">
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                    </td>
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {transaction.description}
-                      </div>
-                    </td>
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900 hidden md:table-cell">
-                      {transaction.category}
-                    </td>
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900 hidden lg:table-cell">
-                      {transaction.client || '-'}
-                    </td>
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm text-gray-900 hidden xl:table-cell">
-                      {transaction.personName || '-'}
-                    </td>
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                        transaction.type === 'income'
-                          ? 'bg-hdr-yellow bg-opacity-20 text-hdr-black'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {transaction.type === 'income' ? 'Receita' : 'Despesa'}
-                      </span>
-                    </td>
-                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <span className={transaction.type === 'income' ? 'text-hdr-yellow font-semibold' : 'text-gray-600 font-semibold'}>
-                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Category Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-        {/* Revenue Breakdown */}
-        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-6">
+        {/* Category Distribution */}
+        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center space-x-2 mb-4">
-            <h3 className="text-lg font-semibold text-hdr-black">
-              Receitas por Categoria
+            <h3 className="text-base lg:text-lg font-semibold text-hdr-black">
+              Distribuição por Categoria
             </h3>
-            <span className="text-lg font-bold text-hdr-yellow hdr-asterisk">*</span>
+            <span className="text-lg font-bold text-hdr-yellow">*</span>
           </div>
-          <div className="space-y-3">
-            {Object.entries(reportData.incomeByCategory).length === 0 ? (
-              <p className="text-gray-500 text-center py-4">Nenhuma receita no período</p>
-            ) : (
-              Object.entries(reportData.incomeByCategory).map(([category, amount]) => {
-                const percentage = reportData.totalIncome > 0 ? (amount / reportData.totalIncome) * 100 : 0;
-                return (
-                  <div key={category} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-4 h-4 bg-hdr-yellow rounded"></div>
-                      <span className="font-medium text-gray-900">{category}</span>
+          <div className="h-64 sm:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={categoryData.slice(0, 6)} // Top 6 categorias
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={40}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="total"
+                >
+                  {categoryData.slice(0, 6).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value) => [`R$ ${value.toLocaleString()}`, '']}
+                  contentStyle={{ fontSize: '12px' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
                     </div>
-                    <div className="text-right">
-                      <div className="font-semibold text-gray-900">
-                        {formatCurrency(amount)}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {categoryData.slice(0, 6).map((item, index) => (
+              <div key={index} className="flex items-center">
+                <div 
+                  className="w-3 h-3 rounded-full mr-2 flex-shrink-0" 
+                  style={{ backgroundColor: item.color }}
+                ></div>
+                <span className="text-xs sm:text-sm truncate">
+                  {item.name}: {formatCurrency(item.total)} ({item.count} trans.)
+                </span>
                       </div>
-                      <div className="text-sm text-gray-500">
-                        {percentage.toFixed(1)}%
+            ))}
                       </div>
                     </div>
                   </div>
-                );
-              })
-            )}
+
+      {/* Client Revenue Chart */}
+      <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
+        <div className="flex items-center space-x-2 mb-4">
+          <h3 className="text-base lg:text-lg font-semibold text-hdr-black">
+            Top 10 Clientes por Receita
+          </h3>
+          <span className="text-lg font-bold text-hdr-yellow">*</span>
+        </div>
+        <div className="h-64 sm:h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={clientRevenueData} layout="horizontal" margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis 
+                type="number"
+                fontSize={12}
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+              />
+              <YAxis 
+                type="category"
+                dataKey="name"
+                fontSize={12}
+                tick={{ fontSize: 12 }}
+                width={100}
+              />
+              <Tooltip 
+                formatter={(value, name, props) => [
+                  `R$ ${value.toLocaleString()}`, 
+                  `Receita (${props.payload.count} transações)`
+                ]}
+                contentStyle={{ fontSize: '12px' }}
+              />
+              <Bar dataKey="value" fill="#FFD11A" />
+            </BarChart>
+          </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Expenses Breakdown */}
-        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-6">
+      {/* Daily Trend */}
+      {dailyData.length > 0 && (
+        <div className="bg-hdr-white rounded-lg shadow-sm border border-gray-200 p-4 lg:p-6">
           <div className="flex items-center space-x-2 mb-4">
-            <h3 className="text-lg font-semibold text-hdr-black">
-              Despesas por Categoria
+            <h3 className="text-base lg:text-lg font-semibold text-hdr-black">
+              Tendência Diária
             </h3>
-            <span className="text-lg font-bold text-hdr-yellow hdr-asterisk">*</span>
+            <span className="text-lg font-bold text-hdr-yellow">*</span>
           </div>
-          <div className="space-y-3">
-            {Object.entries(reportData.expensesByCategory).length === 0 ? (
-              <p className="text-gray-500 text-center py-4">Nenhuma despesa no período</p>
-            ) : (
-              Object.entries(reportData.expensesByCategory).map(([category, amount]) => {
-                const percentage = reportData.totalExpenses > 0 ? (amount / reportData.totalExpenses) * 100 : 0;
-                return (
-                  <div key={category} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-4 h-4 bg-gray-500 rounded"></div>
-                      <span className="font-medium text-gray-900">{category}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold text-gray-900">
-                        {formatCurrency(amount)}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        {percentage.toFixed(1)}%
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+          <div className="h-64 sm:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dailyData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="day" 
+                  fontSize={12}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis 
+                  fontSize={12}
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                />
+                <Tooltip 
+                  formatter={(value, name) => [
+                    `R$ ${value.toLocaleString()}`, 
+                    name === 'receita' ? 'Receita' : name === 'despesa' ? 'Despesa' : 'Lucro'
+                  ]}
+                  contentStyle={{ fontSize: '12px' }}
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="receita" 
+                  stackId="1"
+                  stroke="#FFD11A" 
+                  fill="#FFD11A" 
+                  fillOpacity={0.6}
+                  name="receita"
+                />
+                <Area 
+                  type="monotone" 
+                  dataKey="despesa" 
+                  stackId="2"
+                  stroke="#6b7280" 
+                  fill="#6b7280" 
+                  fillOpacity={0.6}
+                  name="despesa"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
-      </div>
-
-
+      )}
     </div>
   );
 };
