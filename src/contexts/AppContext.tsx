@@ -185,52 +185,75 @@ const saveToStorage = async (userId: string, dataType: 'transactions' | 'clients
 
 const loadTransactionsFromStorage = async (userId: string, addNotification: (notification: any) => void): Promise<Transaction[]> => {
   try {
-    // Tentar carregar da API primeiro
-    const isOnline = await ApiService.isOnline();
-    if (isOnline) {
-      console.log('🌐 API online, carregando transactions da API...');
+    // Sempre tentar carregar da API primeiro (fonte de verdade)
+    console.log('🌐 Carregando transactions da API...');
+    
+    const response = await ApiService.getTransactions();
+    
+    if (response.data && !response.error) {
+      console.log('✅ Transactions carregados da API:', response.data.length);
       
-      const response = await ApiService.getTransactions();
+      // Mapear dados da API para o formato do AppContext
+      const mappedTransactions: Transaction[] = response.data.map(apiTransaction => ({
+        id: apiTransaction.id,
+        type: apiTransaction.type,
+        description: apiTransaction.description,
+        amount: apiTransaction.amount,
+        category: apiTransaction.category,
+        date: apiTransaction.date,
+        client: apiTransaction.client_name || undefined,
+        personName: apiTransaction.person || undefined,
+        createdBy: {
+          id: userId,
+          name: '',
+          email: ''
+        },
+        createdAt: apiTransaction.created_at
+      }));
       
-      if (response.data && !response.error) {
-        console.log('✅ Transactions carregados da API:', response.data.length);
-        // Salvar localmente como backup
-        const key = getStorageKey(userId, 'transactions');
-        StorageService.setItem(key, response.data);
-        
-        addNotification({
-          type: 'success',
-          title: 'Sincronização Concluída',
-          message: `${response.data.length} transações carregadas da nuvem`,
-          duration: 3000
-        });
-        
-        return response.data;
-      }
+      // Salvar localmente como cache
+      const key = getStorageKey(userId, 'transactions');
+      StorageService.setItem(key, mappedTransactions);
+      
+      addNotification({
+        type: 'success',
+        title: 'Dados Sincronizados',
+        message: `${mappedTransactions.length} transações carregadas da nuvem`,
+        duration: 3000
+      });
+      
+      return mappedTransactions;
     }
     
-    // Fallback para dados locais
-    console.log('📂 Carregando transactions locais...');
+    // Se API falhar, tentar dados locais como fallback
+    console.log('⚠️ API indisponível, carregando cache local...');
     const key = getStorageKey(userId, 'transactions');
     const data = StorageService.getItem(key, []);
-    console.log(`Carregando transactions para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
     
     if (Array.isArray(data) && data.length > 0) {
       addNotification({
         type: 'warning',
         title: 'Modo Offline',
-        message: 'Carregando dados locais. Sincronização automática quando voltar online.',
+        message: 'Carregando dados do cache. Sincronização automática quando voltar online.',
         duration: 4000
       });
+      return data;
     }
     
-    return Array.isArray(data) ? data : [];
+    addNotification({
+      type: 'info',
+      title: 'Sem Dados',
+      message: 'Nenhuma transação encontrada. Comece adicionando seu primeiro lançamento.',
+      duration: 3000
+    });
+    
+    return [];
   } catch (error) {
-    console.error('Erro ao carregar transactions do storage:', error);
+    console.error('Erro ao carregar transactions:', error);
     addNotification({
       type: 'error',
-      title: 'Erro ao Carregar Dados',
-      message: 'Não foi possível carregar as transações. Verifique sua conexão.',
+      title: 'Erro de Conexão',
+      message: 'Não foi possível conectar com o servidor. Verifique sua internet.',
       duration: 5000
     });
     return [];
@@ -239,66 +262,72 @@ const loadTransactionsFromStorage = async (userId: string, addNotification: (not
 
 const loadClientsFromStorage = async (userId: string, addNotification: (notification: any) => void): Promise<Client[]> => {
   try {
-    // Tentar carregar da API primeiro
-    const isOnline = await ApiService.isOnline();
-    if (isOnline) {
-      console.log('🌐 API online, carregando clients da API...');
+    // Sempre tentar carregar da API primeiro (fonte de verdade)
+    console.log('🌐 Carregando clients da API...');
+    
+    const response = await ApiService.getClients();
+    
+    if (response.data && !response.error) {
+      console.log('✅ Clients carregados da API:', response.data.length);
       
-      const response = await ApiService.getClients();
+      // Mapear dados da API para o formato do AppContext
+      const mappedClients: Client[] = response.data.map(apiClient => ({
+        id: apiClient.id,
+        name: apiClient.name,
+        email: apiClient.email,
+        phone: apiClient.phone,
+        company: apiClient.company || '',
+        contractProposal: '',
+        address: apiClient.address || '',
+        totalRevenue: apiClient.total_revenue || 0,
+        lastProject: apiClient.last_project || '',
+        status: apiClient.status,
+        contractType: apiClient.contract_type as 'fixed' | 'project' | 'both'
+      }));
       
-      if (response.data && !response.error) {
-        console.log('✅ Clients carregados da API:', response.data.length);
-        // Mapear dados da API para o formato do AppContext
-        const mappedClients: Client[] = response.data.map(apiClient => ({
-          id: apiClient.id,
-          name: apiClient.name,
-          email: apiClient.email,
-          phone: apiClient.phone,
-          company: apiClient.company || '',
-          contractProposal: '',
-          address: '',
-          totalRevenue: apiClient.totalRevenue || 0,
-          lastProject: '',
-          status: apiClient.status,
-          contractType: 'project' as const
-        }));
-        // Salvar localmente como backup
-        const key = getStorageKey(userId, 'clients');
-        StorageService.setItem(key, mappedClients);
-        
-        addNotification({
-          type: 'success',
-          title: 'Sincronização Concluída',
-          message: `${mappedClients.length} clientes carregados da nuvem`,
-          duration: 3000
-        });
-        
-        return mappedClients;
-      }
+      // Salvar localmente como cache
+      const key = getStorageKey(userId, 'clients');
+      StorageService.setItem(key, mappedClients);
+      
+      addNotification({
+        type: 'success',
+        title: 'Dados Sincronizados',
+        message: `${mappedClients.length} clientes carregados da nuvem`,
+        duration: 3000
+      });
+      
+      return mappedClients;
     }
     
-    // Fallback para dados locais
-    console.log('📂 Carregando clients locais...');
+    // Se API falhar, tentar dados locais como fallback
+    console.log('⚠️ API indisponível, carregando cache local...');
     const key = getStorageKey(userId, 'clients');
     const data = StorageService.getItem(key, []);
-    console.log(`Carregando clients para usuário ${userId}:`, Array.isArray(data) ? data.length : 0, 'itens');
     
     if (Array.isArray(data) && data.length > 0) {
       addNotification({
         type: 'warning',
         title: 'Modo Offline',
-        message: 'Carregando dados locais. Sincronização automática quando voltar online.',
+        message: 'Carregando dados do cache. Sincronização automática quando voltar online.',
         duration: 4000
       });
+      return data;
     }
     
-    return Array.isArray(data) ? data : [];
+    addNotification({
+      type: 'info',
+      title: 'Sem Dados',
+      message: 'Nenhum cliente encontrado. Comece adicionando seu primeiro cliente.',
+      duration: 3000
+    });
+    
+    return [];
   } catch (error) {
-    console.error('Erro ao carregar clients do storage:', error);
+    console.error('Erro ao carregar clients:', error);
     addNotification({
       type: 'error',
-      title: 'Erro ao Carregar Dados',
-      message: 'Não foi possível carregar os clientes. Verifique sua conexão.',
+      title: 'Erro de Conexão',
+      message: 'Não foi possível conectar com o servidor. Verifique sua internet.',
       duration: 5000
     });
     return [];
@@ -395,117 +424,269 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Helper functions
   const addTransaction = async (transaction: Omit<Transaction, 'id'>) => {
-    const newTransaction: Transaction = {
-      ...transaction,
-      id: Date.now().toString()
-    };
-    
-    // Adicionar localmente primeiro
-    dispatch({ type: 'ADD_TRANSACTION', payload: newTransaction });
-    
-    addNotification({
-      type: 'success',
-      title: 'Transação Adicionada',
-      message: `${transaction.type === 'income' ? 'Receita' : 'Despesa'} de R$ ${transaction.amount.toLocaleString('pt-BR')} adicionada com sucesso`,
-      duration: 3000
-    });
-    
-    // Tentar sincronizar com API
     try {
-      const isOnline = await ApiService.isOnline();
-      if (isOnline) {
-        const response = await ApiService.createTransaction(newTransaction);
-        if (response.data && !response.error) {
-          console.log('✅ Transação sincronizada com API');
-          addNotification({
-            type: 'info',
-            title: 'Sincronizado',
-            message: 'Transação sincronizada com a nuvem',
-            duration: 2000
-          });
-        }
-      } else {
+      // Sempre tentar criar via API primeiro (fonte de verdade)
+      const response = await ApiService.createTransaction(transaction);
+      
+      if (response.data && !response.error) {
+        // Mapear resposta da API para o formato do AppContext
+        const newTransaction: Transaction = {
+          id: response.data.id,
+          type: response.data.type,
+          description: response.data.description,
+          amount: response.data.amount,
+          category: response.data.category,
+          date: response.data.date,
+          client: response.data.client_name || undefined,
+          personName: response.data.person || undefined,
+          createdBy: {
+            id: user?.id || '',
+            name: user?.name || '',
+            email: user?.email || ''
+          },
+          createdAt: response.data.created_at
+        };
+        
+        // Adicionar ao estado local
+        dispatch({ type: 'ADD_TRANSACTION', payload: newTransaction });
+        
         addNotification({
-          type: 'warning',
-          title: 'Modo Offline',
-          message: 'Transação salva localmente. Será sincronizada quando voltar online.',
-          duration: 4000
+          type: 'success',
+          title: 'Transação Adicionada',
+          message: `${transaction.type === 'income' ? 'Receita' : 'Despesa'} de R$ ${transaction.amount.toLocaleString('pt-BR')} adicionada com sucesso`,
+          duration: 3000
         });
+      } else {
+        throw new Error(response.error || 'Erro ao criar transação');
       }
     } catch (error) {
-      console.error('⚠️ Erro ao sincronizar transação:', error);
+      console.error('Erro ao adicionar transação:', error);
       addNotification({
         type: 'error',
-        title: 'Erro de Sincronização',
-        message: 'Transação salva localmente, mas não foi possível sincronizar com a nuvem',
+        title: 'Erro ao Adicionar',
+        message: 'Não foi possível adicionar a transação. Verifique sua conexão.',
         duration: 5000
       });
     }
   };
 
-  const updateTransaction = (transaction: Transaction) => {
-    dispatch({ type: 'UPDATE_TRANSACTION', payload: transaction });
+  const updateTransaction = async (transaction: Transaction) => {
+    try {
+      // Mapear dados do AppContext para o formato da API
+      const apiTransactionData = {
+        date: transaction.date,
+        description: transaction.description,
+        type: transaction.type,
+        category: transaction.category,
+        amount: transaction.amount,
+        client_id: transaction.client ? state.clients.find(c => c.name === transaction.client)?.id : null,
+        person: transaction.personName
+      };
+      
+      const response = await ApiService.updateTransaction(transaction.id, apiTransactionData);
+      
+      if (response.data && !response.error) {
+        // Mapear resposta da API para o formato do AppContext
+        const updatedTransaction: Transaction = {
+          ...transaction,
+          id: response.data.id,
+          type: response.data.type,
+          description: response.data.description,
+          amount: response.data.amount,
+          category: response.data.category,
+          date: response.data.date,
+          client: response.data.client_name || undefined,
+          personName: response.data.person || undefined,
+          createdAt: response.data.created_at
+        };
+        
+        dispatch({ type: 'UPDATE_TRANSACTION', payload: updatedTransaction });
+        
+        addNotification({
+          type: 'success',
+          title: 'Transação Atualizada',
+          message: 'Transação atualizada com sucesso',
+          duration: 3000
+        });
+      } else {
+        throw new Error(response.error || 'Erro ao atualizar transação');
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar transação:', error);
+      addNotification({
+        type: 'error',
+        title: 'Erro ao Atualizar',
+        message: 'Não foi possível atualizar a transação. Verifique sua conexão.',
+        duration: 5000
+      });
+    }
   };
 
-  const deleteTransaction = (id: string) => {
-    dispatch({ type: 'DELETE_TRANSACTION', payload: id });
+  const deleteTransaction = async (id: string) => {
+    try {
+      const response = await ApiService.deleteTransaction(id);
+      
+      if (response.status === 204 || response.status === 200) {
+        dispatch({ type: 'DELETE_TRANSACTION', payload: id });
+        
+        addNotification({
+          type: 'success',
+          title: 'Transação Excluída',
+          message: 'Transação excluída com sucesso',
+          duration: 3000
+        });
+      } else {
+        throw new Error('Erro ao excluir transação');
+      }
+    } catch (error) {
+      console.error('Erro ao excluir transação:', error);
+      addNotification({
+        type: 'error',
+        title: 'Erro ao Excluir',
+        message: 'Não foi possível excluir a transação. Verifique sua conexão.',
+        duration: 5000
+      });
+    }
   };
 
   const addClient = async (client: Omit<Client, 'id'>) => {
-    const newClient: Client = {
-      ...client,
-      id: Date.now().toString()
-    };
-    
-    // Adicionar localmente primeiro
-    dispatch({ type: 'ADD_CLIENT', payload: newClient });
-    
-    addNotification({
-      type: 'success',
-      title: 'Cliente Adicionado',
-      message: `Cliente "${client.name}" adicionado com sucesso`,
-      duration: 3000
-    });
-    
-    // Tentar sincronizar com API
     try {
-      const isOnline = await ApiService.isOnline();
-      if (isOnline) {
-        const response = await ApiService.createClient(newClient);
-        if (response.data && !response.error) {
-          console.log('✅ Cliente sincronizado com API');
-          addNotification({
-            type: 'info',
-            title: 'Sincronizado',
-            message: 'Cliente sincronizado com a nuvem',
-            duration: 2000
-          });
-        }
-      } else {
+      // Mapear dados do AppContext para o formato da API
+      const apiClientData = {
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        company: client.company,
+        address: client.address,
+        total_revenue: client.totalRevenue,
+        last_project: client.lastProject,
+        status: client.status,
+        contract_type: client.contractType
+      };
+      
+      // Sempre tentar criar via API primeiro (fonte de verdade)
+      const response = await ApiService.createClient(apiClientData);
+      
+      if (response.data && !response.error) {
+        // Mapear resposta da API para o formato do AppContext
+        const newClient: Client = {
+          id: response.data.id,
+          name: response.data.name,
+          email: response.data.email,
+          phone: response.data.phone,
+          company: response.data.company || '',
+          contractProposal: '',
+          address: response.data.address || '',
+          totalRevenue: response.data.total_revenue || 0,
+          lastProject: response.data.last_project || '',
+          status: response.data.status,
+          contractType: response.data.contract_type as 'fixed' | 'project' | 'both'
+        };
+        
+        // Adicionar ao estado local
+        dispatch({ type: 'ADD_CLIENT', payload: newClient });
+        
         addNotification({
-          type: 'warning',
-          title: 'Modo Offline',
-          message: 'Cliente salvo localmente. Será sincronizado quando voltar online.',
-          duration: 4000
+          type: 'success',
+          title: 'Cliente Adicionado',
+          message: `Cliente "${client.name}" adicionado com sucesso`,
+          duration: 3000
         });
+      } else {
+        throw new Error(response.error || 'Erro ao criar cliente');
       }
     } catch (error) {
-      console.error('⚠️ Erro ao sincronizar cliente:', error);
+      console.error('Erro ao adicionar cliente:', error);
       addNotification({
         type: 'error',
-        title: 'Erro de Sincronização',
-        message: 'Cliente salvo localmente, mas não foi possível sincronizar com a nuvem',
+        title: 'Erro ao Adicionar',
+        message: 'Não foi possível adicionar o cliente. Verifique sua conexão.',
         duration: 5000
       });
     }
   };
 
-  const updateClient = (client: Client) => {
-    dispatch({ type: 'UPDATE_CLIENT', payload: client });
+  const updateClient = async (client: Client) => {
+    try {
+      // Mapear dados do AppContext para o formato da API
+      const apiClientData = {
+        name: client.name,
+        email: client.email,
+        phone: client.phone,
+        company: client.company,
+        address: client.address,
+        total_revenue: client.totalRevenue,
+        last_project: client.lastProject,
+        status: client.status,
+        contract_type: client.contractType
+      };
+      
+      const response = await ApiService.updateClient(client.id, apiClientData);
+      
+      if (response.data && !response.error) {
+        // Mapear resposta da API para o formato do AppContext
+        const updatedClient: Client = {
+          ...client,
+          id: response.data.id,
+          name: response.data.name,
+          email: response.data.email,
+          phone: response.data.phone,
+          company: response.data.company || '',
+          contractProposal: '',
+          address: response.data.address || '',
+          totalRevenue: response.data.total_revenue || 0,
+          lastProject: response.data.last_project || '',
+          status: response.data.status,
+          contractType: response.data.contract_type as 'fixed' | 'project' | 'both'
+        };
+        
+        dispatch({ type: 'UPDATE_CLIENT', payload: updatedClient });
+        
+        addNotification({
+          type: 'success',
+          title: 'Cliente Atualizado',
+          message: 'Cliente atualizado com sucesso',
+          duration: 3000
+        });
+      } else {
+        throw new Error(response.error || 'Erro ao atualizar cliente');
+      }
+    } catch (error) {
+      console.error('Erro ao atualizar cliente:', error);
+      addNotification({
+        type: 'error',
+        title: 'Erro ao Atualizar',
+        message: 'Não foi possível atualizar o cliente. Verifique sua conexão.',
+        duration: 5000
+      });
+    }
   };
 
-  const deleteClient = (id: string) => {
-    dispatch({ type: 'DELETE_CLIENT', payload: id });
+  const deleteClient = async (id: string) => {
+    try {
+      const response = await ApiService.deleteClient(id);
+      
+      if (response.status === 204 || response.status === 200) {
+        dispatch({ type: 'DELETE_CLIENT', payload: id });
+        
+        addNotification({
+          type: 'success',
+          title: 'Cliente Excluído',
+          message: 'Cliente excluído com sucesso',
+          duration: 3000
+        });
+      } else {
+        throw new Error('Erro ao excluir cliente');
+      }
+    } catch (error) {
+      console.error('Erro ao excluir cliente:', error);
+      addNotification({
+        type: 'error',
+        title: 'Erro ao Excluir',
+        message: 'Não foi possível excluir o cliente. Verifique sua conexão.',
+        duration: 5000
+      });
+    }
   };
 
   const getTotalIncome = () => {

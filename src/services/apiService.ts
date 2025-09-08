@@ -1,8 +1,8 @@
 // Serviço para comunicação com a API backend
 
-const API_BASE_URL = import.meta.env.PROD 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD 
   ? 'https://hdr-backend-gustavoduartepis-projects.vercel.app/api'
-  : 'http://localhost:3001/api';
+  : 'http://localhost:3001/api');
 
 interface ApiResponse<T> {
   data?: T;
